@@ -1,11 +1,12 @@
 import requests
 from datetime import datetime, timezone
+from app.config import spec_token
 
 class SpecAPI:
     def __init__(self):
         self.base_url = "https://climate.spac.dk/api/records"
-        self.token = "pZdnVxD2V8kyR2o2EyJLqdNXzfct1vFc-Y7pnrIh6_k"
-        self.header = {"Authorization": f"BEARER {self.token}"}
+        self.token = spec_token
+        self.header = {"Authorization": f"Bearer {self.token}"}
 
     def pull_year_month_day(self, limit: int = 5000, year: str = "2026", month: str = "03", day: str = "01"):
         parameters = {

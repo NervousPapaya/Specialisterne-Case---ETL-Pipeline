@@ -4,7 +4,7 @@ import pandas as pd
 
 class Connector:
     """This class handles the connection to the database northwind."""
-    def __init__(self,database = "weather_db",user="weather_app",password="Hestehop11235!", host="db"):
+    def __init__(self,database,user,password, host):
         #NOTE: As this is an exercise, the server password has been hardcoded in.
         self.user = user
         self.password = password

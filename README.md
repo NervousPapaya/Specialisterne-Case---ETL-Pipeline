@@ -1,18 +1,36 @@
 # ETL Intro
 
-This programs purpose is to extract, transform and load data from external APIs to an internal database.
+This program's purpose is to extract, transform and load data from external APIs to an internal database.
+
+## Table of Contents
+1. [Description](#description)
+2. [Database Structure](#database-structure)
+3. [Getting Started](#getting-started)
+   - [Requirements](#requirements)
+   - [Dependencies](#dependencies)
+   - [Environment Variables](#environment-variables)
+   - [Initial Set-up](#initial-set-up)
+   - [Executing Program](#executing-program)
+4. [Help](#help)
+    - [Resetting the Database](#resetting-the-database)
+6. [Authors](#authors)
+6. [Version History](#version-history)
 
 ## Description
 The program's main functionalities are:
 * Extract weather data from the APIs at DMI and Specialisterne ApS.
 * Transform it into generally uniform data structures (millicelsius to celsius etc.) 
-* Load it into a custom-built SQL database "weather_db".
+* Load it into a custom-built SQL database with a user-defined name.
 
-The program can run in docker, or it can create and write to a local Postgres database.
-By design, the program is OS agnostics but has only been tested on Windows.
+As is, the program pulls data from 3 measuring stations at DMI: Jæbersborg, Ødum and Årslev.
 
-The work here was done as part of my course at Specialisterne ApS. As this was an exercise, little thought has been given to password security.
+The program can run in docker, or it can create and write to a local PostgreSQL database.
+By design, the program is OS-agnostic but has only been tested on Windows.
 
+During the extraction process, the program will create/write to a JSON file ("etl_times.json") which holds the latest timestamps of each data source.
+The program will then use these as a start point for pulls the next time it runs.
+
+The work here was done as part of my course at Specialisterne ApS. 
 
 
 ### Database structure
@@ -62,80 +80,126 @@ The datatypes of the table columns are defined in load/schemas/table_schema.py. 
 
 ## Getting Started
 
+### Requirements
+Before installing or running the program, make sure your system meets these prerequisites:
+
+* Python 3.12 or higher
+* Docker Desktop (if you want to run the program in Docker)
+* PostgreSQL (if running outside Docker with a local database)
+* Internet connection to access the external APIs
+
 ### Dependencies
+If running in Docker, the docker container will install dependencies automatically. 
+Otherwise, you will need the modules listed in requirements.txt (common ones include psycopg2 and requests).
+You can get these by downloading requirements.txt and running
+```
+pip install -r requirements.txt
+```
 
-The dependencies hinge on whether you wish to run the program in docker or with a local postgreSQL database. 
-
-If running in docker you will need:
-* Docker desktop 
-
-If running outside docker with a local database you will need:
-* PostgreSQL
-* The modules listed in requirements.txt
-
+### Environment Variables
+This is the full list of environment variables used by the program. 
+```
+SPEC_TOKEN=your_api_token_here        # Token from Specialisterne API
+DB_USER=your_docker_db_user           # Docker DB username
+DB_PASSWORD=your_docker_db_password   # Docker DB password
+DB_NAME=your_docker_db_name           # Docker DB name
+LOCAL_USER=your_local_db_user         # Local PostgreSQL username
+LOCAL_PASSWORD=your_local_db_password # Local PostgreSQL password
+LOCAL_DB=your_local_db_name           # Local PostgreSQL database name
+```
 
 ### Initial Set-up
+First 
+1. Download the app folder and .env.template. Place them in the same project directory.
+2. Rename .env.template to .env 
+3. Get a token from the Specialisterne API. The program needs this to connect to the API. 
+   * Go to https://climate.spac.dk/ and register
+   * Log in and click on "API Keys" at the top
+   * Set a name, like 'auth_token' and press "Create"
+   * Copy the token and go to the .env file. Paste the token in place of "your_api_token_here"
 
-* Download the app folder and main.py. Place them in the same directory.
 
-If running in docker:
-* download docker-compose.yml and Dockerfile. Place them next to main.py.
+The rest of the setup depends on whether you are running in Docker or with a local database. 
+
+If running in Docker:
+1. Download compose.ymal and Dockerfile. Place them next to main.py.
+2. Now go to .env and specify a Docker username, password and database name of your choice. See environment variables below.
 
 If running outside docker with a local database: 
-* You likely need to edit the password in /load/schemas/database_schema.py. It should match your postgreSQL user password.
-* Edit the variable 'docker' in main.py to 'False'. 
+1. Edit the variable 'docker' in main.py to 'False'. 
+2. Go to .env and fill in your PostgreSQL username and password.By default, the user in PostgreSQL is "postgres". You should also specify a database name of your choice. See environment variables below.
+
 
 
 ### Executing program
 
 If running in Docker:
-* Open docker desktop
-* Navigate in terminal to the folder containing docker-compose.yml, Dockerfile and main.py
-* On first run, run the following. The program will create a database with 3 tables ("DMI","BME280" and "DS18B20"). Then it extracts, transforms and loads data from the APis into the database.
+1. Open docker desktop
+2. Navigate to the folder containing compose.yaml, Dockerfile and main.py in terminal 
+3. On first run, run the following. 
 ```
-docker-compose up --build
+docker compose up --build
 ```
-* Subsequently: If you need to access the database after closing, you can simply run
+Subsequently, if you need to access the database after closing, you can simply run
 ```
-docker-compose up
+docker compose up -d
 ```
-* Now that the database is set up, you connect to the postgreSQL server by running
+4. Now that the database is set up, you connect to the PostgreSQL server by running
 ```
 docker exec -it specialisternecase-etlpipeline-db-1 psql -U weather_app -d weather_db
 ```
-* You can then run SQL queries in the command line. Example:
+You can then run SQL queries in the command line. Example:
 ```
 SELECT * FROM "DMI"
 ```
-* To get a summary of the tables in the database, write
+To get a summary of the tables in the database, write
 ```
 \dt
 ```
-* To exit, first exit postgreSQL and then docker by writing
+5. To exit, first exit PostgreSQL and then docker by writing
 ```
 \q
-docker-compose down
+docker compose down
 ```
 
 If running outside docker with a local database: 
-* Run main.py - The program will create a database with 3 tables ("DMI","BME280" and "DS18B20"). Then it extracts, transforms and loads data from the APis into the database.
-* Use your favorite method to query and view the data in the database (such as pgadmin4 or terminal).
+1. Run main.py 
+2. Use your favorite method to query and view the data in the database (such as pgadmin4 or terminal).
 
+
+## Help
+When running in docker, if there are issues during the build, ensure that in requirements.txt you have 
+```
+psycopg2-binary
+```
+with no version rather than something like psycopg2==2.9.11. Alternatively, you can go to "Dockerfile" and change the line
+```
+FROM python:3.12-slim
+```
+to something like
+```
+FROM python:3.12
+```
+or 3.13. This will extend the build time, as docker now runs a full python distribution.
+
+If you run in to other issues using docker, it might help to reset the database using the instructions above.
 
 ### Resetting the database
+In all cases, you should delete etl_times.json. This is to reset the starting time of the pull requests made.
+
 If running in docker, you can run the following to reset the entire database.
 ```
-docker-compose down -v
+docker compose down -v
 ```
 This will delete all persistent volumes.
 
-Else, the program includes functionality for nuking tables or the database.
+The program also includes functionality for nuking tables or the database.
 If you wish to reset the database, simply comment out line 14 and 15 in main.py or write
 ```
 crud = CRUD()
-crud.cleanse_db()
+crud.reset_everything()
 ```
-NB: This does not clear the internal ids of the tables. So, for example, if you have 145 rows in the "DMI" table with ids 1-145, the first row you insert will receive the internal id 146.
+NB: This does not clear the internal ids of the tables. So, for example, if you have 145 rows in the "DMI" table with ids 1-145, the first row you insert will receive the internal id 146. You can clear the ids by feeding reset_everything the optional argument True.
 
 If you wish to delete the rows of a specific table, you can call the delete_all_rows method of the CRUD class. 
 This method requires a table name as argument. For example, the following will delete all rows of the "DMI" table:
@@ -145,13 +209,6 @@ crud.delete_all_rows("DMI")
 ```
 NB: Note that as with the cleanse_db method, this does not clear the internal ids of the tables.
 
-## Help
-
-When running in docker, certain issues can be cleared by running the following in terminal:
-```
-docker-compose down -v
-```
-This will delete all persistent volumes.
 
 ## Authors
 

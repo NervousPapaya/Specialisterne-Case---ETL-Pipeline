@@ -2,7 +2,6 @@ from app.extract.specialisterne import SpecAPI
 from app.extract.dmi import DMIAPI
 from app.transform.transform import SpecDataTransformer, DMIDataTransformer
 from app.load.db.CRUD import CRUD
-import os
 import json
 import time
 from datetime import datetime, timedelta
@@ -51,6 +50,7 @@ class ETLProcess:
             pull_time, records = API.pull_datetime(station_id=station_id, parameter_id=parameter_id, limit=limit,
                                                    start_time=from_time, offset=offset)
             if not records:
+                print("No more new records.")
                 break
 
             # We set an offset. The DMI api pulls newest record first,
@@ -87,6 +87,7 @@ class ETLProcess:
             if avoid_ids:
                 records = self.remove_rows_by_id(records, avoid_ids)
             if not records:
+                print("No more new records.")
                 break
             # We create a new timestamp and will pull the next entries from there.
             # The timestamps of the BME280 and DS18B20 do not fully line up.
@@ -94,6 +95,7 @@ class ETLProcess:
             # This means we will get a duplicate row (one entry per reader) when making the next pull.
 
             last_bme, last_ds = self.get_last_bme_and_ds(records)
+            from_time = self.advance_timestamp(min(last_bme["timestamp"],last_ds["timestamp"]))
 
             # We explicitly make sure to remove those duplicates.
             # This is not necessary for the database, as the create_mult_rows method skips duplicates.
