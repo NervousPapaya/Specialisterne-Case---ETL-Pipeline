@@ -23,6 +23,10 @@ The program's main functionalities are:
 * Load it into a custom-built SQL database with a user-defined name.
 
 As is, the program pulls data from 3 measuring stations at DMI: Jæbersborg, Ødum and Årslev.
+When run, the program pulls data from the APIs in this order:
+1. The 'old' Specialisterne API (purely an archive - no new readings are made)
+2. DMI
+3. The New specialisterne API
 
 The program can run in docker, or it can create and write to a local PostgreSQL database. 
 Furthermore, the program has two modes: pull data once or at set time intervals while running. 
@@ -31,12 +35,12 @@ By design, the program is OS-agnostic but has only been tested on Windows.
 During the extraction process, the program will create/write to a JSON file ("etl_times.json") which holds the latest timestamps of each data source.
 The program will then use these as a start point for pulls the next time it runs.
 
-The work here was done as part of my course at Specialisterne ApS. 
+The work here was a 2-week project during my course at Specialisterne ApS. 
 
 
 ### Database structure
-After initializing, the database will have 3 tables "DMI", "BME280" and "DS18B20" which stores data from each respective source. 
-DMI and BME280 have observations of both temperature, humidity and pressure, while DS18B20 measures temperature only. 
+After initializing, the database will have 4 ordinary tables "DMI", "BME280", "DS18B20" and "SCD41" which store data from each respective source. Furthermore, 3 view tables will be created containing all the databases' temperature, humidity and pressure data respectively. 
+The structure of these tables can be found in SQL files in /app/sql.
 
 The datatypes of the table columns are defined in load/schemas/table_schema.py. Here is an overview of the tables, with columns and datatypes:
 
@@ -77,6 +81,18 @@ The datatypes of the table columns are defined in load/schemas/table_schema.py. 
 | observed_at | timestamp with time zone | the date when the data was observed                        |
 | pulled_at   | timestamp with time zone | the date at which the data was pulled from the API         |
 
+**SCD41 Table:**
+
+ Column      | Datatype                 | content                                            | 
+|-------------|--------------------------|----------------------------------------------------|
+| id          | integer, primary key     | the database id                                    |
+| reader_id   | UUID, foreign key        | the uuid of the reading in the dmi database        |
+| co2         | INT                      | ppm                                                |
+| humidity    | numeric(20,13)           | %                                                  |
+| temperature | numeric(20,13)           | degree celsius                                     |
+| observed_at | timestamp with time zone | the date when the data was observed                |
+| pulled_at   | timestamp with time zone | the date at which the data was pulled from the API |
+
 
 
 ## Getting Started
@@ -114,13 +130,18 @@ LOCAL_DB=your_local_db_name           # Local PostgreSQL database name
 ### Initial Set-up
 First 
 1. Download the app folder and .env.template. Place them in the same project directory.
-2. Rename .env.template to .env 
-3. Get a token from the Specialisterne API. The program needs this to connect to the API. 
+2. Rename .env.template to .env
+3. Get a token for the new Specialisterne API
+   * Go to https://herodot.spac.dk/ and register
+   * Log in and click on "API Keys" at the top
+   * Set a name, like 'auth_token' and press "Generate Key"
+   * Copy the token and go to the .env file. Paste the token in place of "your_api_token_here"
+
+4. Get a token for the old Specialisterne API. Alternatively, go to the update_database method in /app/pipeline/etl.py and remove the self.spec_etl call. 
    * Go to https://climate.spac.dk/ and register
    * Log in and click on "API Keys" at the top
    * Set a name, like 'auth_token' and press "Create"
    * Copy the token and go to the .env file. Paste the token in place of "your_api_token_here"
-
 
 The rest of the setup depends on whether you are running in Docker or with a local database. 
 
@@ -217,7 +238,7 @@ NB: Note that as with the cleanse_db method, this does not clear the internal id
 
 ## Authors
 
-Me
+@NervousPapaya
 
 ## Version History
 

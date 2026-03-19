@@ -1,7 +1,8 @@
 from app.pipeline.etl import ETLProcess
 from app.load.db.initialize import DatabaseInitializer
-from config import docker
+from app.config import docker
 import os
+from app.load.db.CRUD import CRUD
 
 def main():
     initializer = DatabaseInitializer(docker=docker)

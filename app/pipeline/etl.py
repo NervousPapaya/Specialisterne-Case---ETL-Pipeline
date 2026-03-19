@@ -1,4 +1,5 @@
 from app.extract.specialisterne import SpecAPI
+from app.extract.new_specialisterne import NewSpecAPI
 from app.extract.dmi import DMIAPI
 from app.transform.transform import SpecDataTransformer, DMIDataTransformer
 from app.load.db.CRUD import CRUD
@@ -33,10 +34,10 @@ class ETLProcess:
 
 
     def update_database(self):
-        """This unnamed functions job will be to handle both ETLs"""
+        """This method handles all of the various ETLs"""
         times_dict = self.get_start_times()
 
-        # This handles the specialisterne etl
+        # This handles the old specialisterne etl
         self.spec_etl(from_time=times_dict["spec"])
 
         # The rest handles the dmi etl
@@ -57,6 +58,10 @@ class ETLProcess:
         for station in stations:
             for parameterId in params:
                 self.dmi_etl(stations[station], parameterId, from_time=times_dict["DMI"][parameterId])
+
+        times_dict = self.get_start_times()
+        self.new_spec_etl(from_time=times_dict["spec"])
+
 
     def dmi_etl(self, station_id, parameter_id, from_time: str = "2026-03-09T00:00:00Z", max_pulls: int = None,
                 limit: int = 5000):
@@ -254,3 +259,67 @@ class ETLProcess:
         thread = threading.Thread(target=self.run_etl_periodically, args=(interval_seconds,), daemon=True)
         thread.start()
         print(f"ETL daemon started, running every {interval_minutes} minutes.")
+
+
+    def new_spec_etl(self, from_time: str = "2026-03-17T00:00:00Z", max_pulls: int = None, limit: int = 5000):
+        api = NewSpecAPI()
+        start_time = time.time()
+        total_pulls = 0
+        avoid_ids = set()
+        transformer = SpecDataTransformer()
+
+        print("Pulling data from the New Specialisterne API")
+        while True:
+            pull_time, records = api.pull_from(limit=limit, from_time=from_time)
+
+            if avoid_ids:
+                records = self.remove_rows_by_id(records, avoid_ids)
+            if not records:
+                print("No more new records.")
+                break
+            # We create a new timestamp and will pull the next entries from there.
+            # The timestamps of the readers do not fully line up.
+            # So we take the min of these and increment by a millisecond.
+            # This means we will get a duplicate row (one entry per reader) when making the next pull.
+
+            last_readings = self.get_last_readings(records)
+            from_time = self.advance_timestamp(min([last_readings[key]["timestamp"] for key in last_readings]))
+
+            # We explicitly make sure to remove those duplicates.
+            # This is not necessary for the database, as the create_mult_rows method skips duplicates.
+            # HOWEVER, it is necessary to ensure the process stops.
+            # Indeed, if we don't remove them, there records will always have at least two records, and the process will hang.
+            avoid_ids = [last_readings[key]["id"] for key in last_readings]
+
+            db_dict = transformer.new_spec_data_to_db_dict(pull_time, records)
+            for table_name in db_dict:
+                self.crud.create_mult_rows(table_name, db_dict[table_name], commit=True, close=False)
+
+            elapsed_time = time.time() - start_time
+            print(f"5000 records pulled. Exporting pull times to json. Elapsed time: {elapsed_time}")
+
+            self.export_start_times(from_time, "spec")
+
+            elapsed_time = time.time() - start_time
+            print(f"json exported. Pulling next 5000. Elapsed time: {elapsed_time}")
+            total_pulls += 1
+            if self.check_max_vs_total_pulls(max_pulls,total_pulls,start_time):
+                break
+        self.crud.db.close()
+
+    def get_last_readings(self, records):
+        last_readings = {}
+
+        for r in records:
+            if "BME280" in r["reading"] and r['location']['value'] == '00000000adae116e-percepter-ballerup-in':
+                last_readings["last_bme_in"] = r
+            elif "BME280" in r["reading"] and r['location']['value'] == '000000005b900eb3-percepter-ballerup-out':
+                last_readings["last_bme_out"] = r
+            elif "DS18B20" in r['reading'] and r['location']['value'] == '00000000adae116e-percepter-ballerup-in':
+                last_readings["last_ds_in"] = r
+            elif "DS18B20" in r['reading'] and r['location']['value'] == '000000005b900eb3-percepter-ballerup-out':
+                last_readings["last_ds_out"] = r
+            else:
+                last_readings["last_scd"] = r
+
+        return last_readings

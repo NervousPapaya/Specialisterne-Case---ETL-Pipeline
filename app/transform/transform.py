@@ -70,14 +70,52 @@ class SpecDataTransformer:
                 ds_db_list.append(ds_dict)
         return db_dict
 
-    def scd_record_to_dict(self, record):
-        """This method transforms the data recorded from the SCD41 in the Specialisterne's API.
+
+    def new_bme_record_to_dict(self,record):
+        """This method transforms the data recorded from the BME280 data in the Specialisterne's API.
         It pulls out the data we want, and changes temperature from millicelsius to Celsius.
         The method outputs a dictionary."""
         db_dict = {}
         db_dict["reader_id"] = record['id']
+        if record['location']['value'] == "000000005b900eb3-percepter-ballerup-out":
+            db_dict["location"] = "outside"
+        elif record['location']['value'] == '00000000adae116e-percepter-ballerup-in':
+            db_dict["location"] = "inside"
+        read_dict = record.get("reading").get("BME280")
+        for col in ["humidity","temperature"]:
+            db_dict[col] = read_dict[col]
+        db_dict["pressure"] = read_dict["pressure"]/100
+        db_dict["observed_at"] = record["timestamp"]
+
+        return db_dict
+
+    def new_ds_record_to_dict(self,record):
+        """This method transforms the data recorded from the DS18B20 data in the Specialisterne's API.
+        It pulls out the data we want, and changes temperature from millicelsius to Celsius.
+        The method outputs a dictionary."""
+        db_dict = {}
+        db_dict["reader_id"] = record['id']
+        if record['location']['value'] == "000000005b900eb3-percepter-ballerup-out":
+            db_dict["location"] = "outside"
+        elif record['location']['value'] == '00000000adae116e-percepter-ballerup-in':
+            db_dict["location"] = "inside"
         read_dict = record.get("reading").get("DS18B20")
         db_dict["temperature"] = read_dict["raw_reading"]/1000
+        db_dict["observed_at"] = record["timestamp"]
+
+        return db_dict
+
+
+    def scd_record_to_dict(self, record):
+        """This method transforms the data recorded from the SCD41 in the Specialisterne's API.
+        It pulls out the data we want, and converts temperature and humidity from raw readings to humane values.
+        The method outputs a dictionary."""
+        db_dict = {}
+        db_dict["reader_id"] = record['id']
+        read_dict = record.get("reading").get("SCD41")
+        db_dict["co2"] = read_dict["co2"]
+        db_dict["humidity"] = read_dict["humidity"]/65535*100
+        db_dict["temperature"] = 175*read_dict["temperature"]/65535 -45
         db_dict["observed_at"] = record["timestamp"]
 
         return db_dict
@@ -92,15 +130,15 @@ class SpecDataTransformer:
         for record in data:
             device = list(record.get("reading").keys())[0]
             if device == "BME280":
-                bme_dict = self.bme_record_to_dict(record)
+                bme_dict = self.new_bme_record_to_dict(record)
                 bme_dict["pulled_at"] = pull_time
                 bme_db_list.append(bme_dict)
             if device == "DS18B20":
-                ds_dict = self.ds_record_to_dict(record)
+                ds_dict = self.new_ds_record_to_dict(record)
                 ds_dict["pulled_at"] = pull_time
                 ds_db_list.append(ds_dict)
             if device == "SCD41":
                 scd_dict = self.scd_record_to_dict(record)
-                ds_dict["pulled_at"] = pull_time
+                scd_dict["pulled_at"] = pull_time
                 scd_db_list.append(scd_dict)
         return db_dict

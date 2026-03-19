@@ -52,7 +52,7 @@ class DatabaseInitializer:
 
     def set_up_view_tables(self,close: bool=True):
         base_path = Path(__file__).resolve().parent
-        sql_folder = (base_path / ".." / "sql" / "tables").resolve()
+        sql_folder = (base_path / ".." / ".." / "sql" / "tables").resolve()
         for filename in os.listdir(sql_folder):
             if filename.endswith(".sql"):
                 filepath = os.path.join(sql_folder, filename)

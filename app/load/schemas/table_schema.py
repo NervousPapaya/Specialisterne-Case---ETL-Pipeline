@@ -20,5 +20,13 @@ TABLES = {"DMI": {
             "temperature": "NUMERIC(20, 13)",
             "observed_at": "TIMESTAMP WITH TIME ZONE",
             "pulled_at": "TIMESTAMP WITH TIME ZONE"
+        },
+        "SCD41":{
+            "reader_id": "UUID UNIQUE",
+            "co2": "INT",
+            "humidity": "NUMERIC(20, 13)",
+            "temperature": "NUMERIC(20, 13)",
+            "observed_at": "TIMESTAMP WITH TIME ZONE",
+            "pulled_at": "TIMESTAMP WITH TIME ZONE"
         }
 }

@@ -1,13 +1,14 @@
-CREATE VIEW humidity_data AS
+CREATE OR REPLACE VIEW humidity_data AS
 
 -- DMI
 SELECT
     value AS humidity,
     observed_at,
     pulled_at,
-    'DMI' AS source
-FROM table1
-WHERE type = 'humidity'
+    'DMI' AS source,
+    'outside' AS location
+FROM "DMI"
+WHERE parameter_id = 'humidity'
 
 UNION ALL
 
@@ -16,5 +17,17 @@ SELECT
     humidity,
     observed_at,
     pulled_at,
-    'BME280' AS source
-FROM table2;
+    'BME280' AS source,
+    location
+FROM "BME280"
+
+UNION ALL
+
+-- SCD41 sensor
+SELECT
+    humidity AS humidity,
+    observed_at,
+    pulled_at,
+    'SCD41' as source,
+    'inside' as location
+FROM "SCD41";
