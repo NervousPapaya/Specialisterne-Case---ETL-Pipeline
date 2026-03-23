@@ -174,11 +174,11 @@ docker compose up -d
 ```
 4. Now that the database is set up, you connect to the PostgreSQL server by running
 ```
-docker exec -it specialisternecase-etlpipeline-db-1 psql -U weather_app -d weather_db
+docker exec -it specialisternecase-etlpipeline-db-1 psql -U your_db_user_here -d your_db_name_here
 ```
 You can then run SQL queries in the command line. Example:
 ```
-SELECT * FROM "DMI"
+SELECT * FROM "DMI";
 ```
 To get a summary of the tables in the database, write
 ```
