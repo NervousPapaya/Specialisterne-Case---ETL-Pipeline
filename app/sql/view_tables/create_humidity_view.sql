@@ -7,7 +7,7 @@ SELECT
     pulled_at,
     'DMI' AS source,
     'outside' AS location
-FROM "DMI"
+FROM "raw"."DMI"
 WHERE parameter_id = 'humidity'
 
 UNION ALL
@@ -19,7 +19,7 @@ SELECT
     pulled_at,
     'BME280' AS source,
     location
-FROM "BME280"
+FROM "raw"."BME280"
 
 UNION ALL
 
@@ -30,4 +30,4 @@ SELECT
     pulled_at,
     'SCD41' as source,
     'inside' as location
-FROM "SCD41";
+FROM "raw"."SCD41";

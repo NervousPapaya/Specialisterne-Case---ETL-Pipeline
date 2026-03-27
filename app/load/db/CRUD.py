@@ -1,26 +1,28 @@
 from app.load.db.connection import Connector
-from app.load.error_handling.type_control import test_parameter, test_parameters
 from app.load.schemas.table_schema import TABLES
 from psycopg2 import sql
 from app.config import local_database_schema, docker_database_schema
 import os
 
 class CRUD:
-    def __init__(self, docker:bool = False):
+    def __init__(self, user, password, docker:bool = False,):
         if docker:
-            self.db = Connector(docker_database_schema["database"], docker_database_schema["user"],
-                                   docker_database_schema["password"], docker_database_schema["host"])
+            self.database = docker_database_schema["database"]
+            self.host = docker_database_schema["host"]
         else:
-            self.db = Connector(local_database_schema["database"], local_database_schema["user"],
-                                   local_database_schema["password"], local_database_schema["host"])
+            self.database = local_database_schema["database"]
+            self.host = local_database_schema["host"]
 
+        self.user = user
+        self.password = password
+        self.db = Connector(self.database,self.user,self.password,self.host)
 
-    def create_mult_rows(self,table_name:str, rows: list[dict], commit:bool = True, close:bool = True):
+    def create_mult_rows(self, table_name:str, rows: list[dict], schema_name:str='public', commit:bool = True, close:bool = True):
         """This method handles creating multiple new rows in a designated table of the database.
         rows must be a list of dictionaries, with keys being column names and values being, well... values.
         The close argument decides whether to close the connection after running the method. By default, it is true
         The commit argument decides whether a change should be commited to the database immediately. By default, it is true."""
-        columns = TABLES.get(table_name)
+        columns = TABLES.get(table_name).get("columns")
         if columns is None:
             raise ValueError(f"Unknown table: {table_name}")
         columns = list(columns.keys())
@@ -33,15 +35,22 @@ class CRUD:
 
         column_names = [sql.Identifier(col_name) for col_name in columns]
         values = [[row[col] for col in columns] for row in rows]
+
+        # Get the table-specific primary key
+        pk_column = f"{table_name}_id"
         #Building the query
-        query = sql.SQL("""INSERT INTO {} ({})
+        query = sql.SQL("""INSERT INTO {}.{} ({})
         VALUES %s
         ON CONFLICT DO NOTHING
+        RETURNING {}
         """).format(
+            sql.Identifier(schema_name),
             sql.Identifier(table_name),
-            sql.SQL(", ").join(column_names)
+            sql.SQL(", ").join(column_names),
+            sql.Identifier(pk_column)
         )
-        self.db.execute_mult(query, values, commit=commit, close=close)
+        rows_created = self.db.execute_mult(query, values, commit=commit, close=close, table_name=table_name, returning_ids=True)
+        return len(rows_created)
 
     def delete_all_rows(self, table_name:str,reset_id: bool = False):
         """This method deletes all rows of the given table.
@@ -73,3 +82,7 @@ class CRUD:
         else:
             print(f"{file_path} does not exist.")
 
+    def get_database(self):
+        return self.database
+    def get_host(self):
+        return self.host

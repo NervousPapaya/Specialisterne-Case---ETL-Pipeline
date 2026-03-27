@@ -50,7 +50,7 @@ The datatypes of the table columns are defined in load/schemas/table_schema.py. 
 | Column       | Datatype                 | content                                                                                                 | 
 |--------------|--------------------------|---------------------------------------------------------------------------------------------------------|
 | id           | integer, primary key     | the database id                                                                                         |
-| dmi_id       | UUID, foreign key        | the uuid of the reading in the dmi database                                                             |
+| dmi_id       | UUID                     | the uuid of the reading in the dmi database                                                             |
 | parameter_id | varchar(50)              | temperature, humidity or pressure                                                                       |
 | value        | numeric(20,13)           | degree celsius for temperature, % for humidity and hPa for pressure                                     |
 | observed_at  | timestamp with time zone | the date when the data was observed                                                                     |
@@ -63,7 +63,7 @@ The datatypes of the table columns are defined in load/schemas/table_schema.py. 
 | Column      | Datatype                 | content                                                    | 
 |-------------|--------------------------|------------------------------------------------------------|
 | id          | integer, primary key     | the database id                                            |
-| reader_id   | UUID, foreign key        | the uuid of the reading in the dmi database                |
+| reader_id   | UUID                     | the uuid of the reading in the dmi database                |
 | location    | varchar(7) NOT NULL      | where the sensor is stored (must be 'inside' or 'outside') |
 | humidity    | numeric(20,13)           | %                                                          |
 | pressure    | numeric(20,13)           | hPa                                                        |
@@ -76,7 +76,7 @@ The datatypes of the table columns are defined in load/schemas/table_schema.py. 
 | Column      | Datatype                 | content                                                    | 
 |-------------|--------------------------|------------------------------------------------------------|
 | id          | integer, primary key     | the database id                                            |
-| reader_id   | UUID, foreign key        | the uuid of the reading in the dmi database                |
+| reader_id   | UUID                     | the uuid of the reading in the dmi database                |
 | location    | varchar(7) NOT NULL      | where the sensor is stored (must be 'inside' or 'outside') |
 | temperature | numeric(20,13)           | degree celsius                                             |
 | observed_at | timestamp with time zone | the date when the data was observed                        |
@@ -87,7 +87,7 @@ The datatypes of the table columns are defined in load/schemas/table_schema.py. 
 |  Column     | Datatype                 | content                                            | 
 |-------------|--------------------------|----------------------------------------------------|
 | id          | integer, primary key     | the database id                                    |
-| reader_id   | UUID, foreign key        | the uuid of the reading in the dmi database        |
+| reader_id   | UUID                     | the uuid of the reading in the dmi database        |
 | co2         | INT                      | ppm                                                |
 | humidity    | numeric(20,13)           | %                                                  |
 | temperature | numeric(20,13)           | degree celsius                                     |
@@ -146,7 +146,7 @@ LOCAL_DB=your_local_db_name           # Local PostgreSQL database name
 The rest of the setup depends on whether you are running in Docker or with a local database. 
 
 If running in Docker:
-1. Download compose.yaml and Dockerfile. Place them next to main.py.
+1. Download compose.yaml and Dockerfile. Place them next to the app folder and .env.
 2. Now go to .env and specify a Docker username, password and database name of your choice. See environment variables above.
 3. If you want the program to pull data only once, change ETL_mode to 'once' in .env.
 
@@ -163,7 +163,7 @@ Then simply add this to the JSON file.
 
 If running in Docker:
 1. Open docker desktop
-2. Navigate to the folder containing compose.yaml, Dockerfile and main.py in terminal 
+2. Navigate to the folder containing compose.yaml, Dockerfile and the app folder in terminal 
 3. On first run, run the following. 
 ```
 docker compose up --build
@@ -174,11 +174,11 @@ docker compose up -d
 ```
 4. Now that the database is set up, you connect to the PostgreSQL server by running
 ```
-docker exec -it specialisternecase-etlpipeline-db-1 psql -U weather_app -d weather_db
+docker exec -it etl-db-1 psql -U your_db_user_here -d your_db_name_here
 ```
 You can then run SQL queries in the command line. Example:
 ```
-SELECT * FROM "DMI"
+SELECT * FROM "DMI";
 ```
 To get a summary of the tables in the database, write
 ```
