@@ -5,7 +5,7 @@ from app.config import local_database_schema, docker_database_schema
 import os
 
 class CRUD:
-    def __init__(self, user, password, docker:bool = False,):
+    def __init__(self, user, password, docker:bool = False):
         if docker:
             self.database = docker_database_schema["database"]
             self.host = docker_database_schema["host"]

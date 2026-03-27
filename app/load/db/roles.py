@@ -5,6 +5,9 @@ import os
 
 
 class RoleManager:
+    """This class manages the roles in the database. It has a method for setting up all the roles on initialization.
+    Then there are methods for creating a role and inheriting a role in general.
+    Other than that each role needs a bespoke method based on their access privileges."""
     def __init__(self, db: Connector):
         self.db = db
         self.raw_data = database_schemas["raw_data_schema"]
@@ -33,6 +36,10 @@ class RoleManager:
             sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES to {}").format(
                 sql.Identifier(name)), commit=True, close=False
         )
+
+        # Give access to existing and future sequences
+        self.grant_usage_select_sequence_access(name,"public",future=True)
+
         if close:
             self.db.close()
 
@@ -40,12 +47,15 @@ class RoleManager:
         name = os.getenv("AUDITOR_USER")
         password = os.getenv("AUDITOR_PASSWORD")
         self.create_role(name, password)
+        logs = self.logs
         # Grant schema usage
-        self.db.execute(sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(sql.Identifier(self.logs),sql.Identifier(name)), commit=True,
+        self.db.execute(sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(sql.Identifier(logs),sql.Identifier(name)), commit=True,
                         close=False)
         # Grant table-level select
-        self.db.execute(sql.SQL("GRANT SELECT ON {}.tech_log TO {}").format(sql.Identifier(self.logs),sql.Identifier(name)), commit=True,
+        self.db.execute(sql.SQL("GRANT SELECT ON {}.tech_log TO {}").format(sql.Identifier(logs),sql.Identifier(name)), commit=True,
                         close=False)
+
+
         if close:
             self.db.close()
 
@@ -58,7 +68,7 @@ class RoleManager:
             sql.Identifier(self.raw_data),
             sql.Identifier(name)
         ), commit=True, close=False)
-        # Grant table-level select
+        # Grant table-level permission
         grant_current_perm_query = sql.SQL("GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA {} to {}").format(
             sql.Identifier(self.raw_data),
             sql.Identifier(name)
@@ -74,7 +84,7 @@ class RoleManager:
 
         # Give access to existing sequences
         self.db.execute(
-            sql.SQL("GRANT SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA {} TO {}").format(
+            sql.SQL("GRANT USAGE, SELECT, UPDATE ON ALL SEQUENCES IN SCHEMA {} TO {}").format(
                 sql.Identifier(self.raw_data),
                 sql.Identifier(name)
             ),
@@ -83,7 +93,7 @@ class RoleManager:
 
         # Give access to future sequences
         self.db.execute(
-            sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT SELECT, UPDATE ON SEQUENCES TO {}").format(
+            sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT USAGE, SELECT, UPDATE ON SEQUENCES TO {}").format(
                 sql.Identifier(self.raw_data),
                 sql.Identifier(name)
             ),
@@ -105,7 +115,7 @@ class RoleManager:
             name
         ), commit=True, close=False)
 
-        # Grant table-level select
+        # Grant table-level permission
         grant_current_perm_query = sql.SQL("GRANT INSERT ON ALL TABLES IN SCHEMA {} TO {}").format(
             logs,
             name
@@ -123,7 +133,7 @@ class RoleManager:
 
         # Give access to future sequences
         self.db.execute(
-            sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT SELECT, UPDATE ON SEQUENCES TO {}").format(
+            sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT USAGE, SELECT ON SEQUENCES TO {}").format(
                 logs,
                 name
             ),
@@ -136,27 +146,28 @@ class RoleManager:
         inherit_name = os.getenv("data_analyst_user")
         self.create_role(name, password)
         # Inherit the data analyst role
-        self.db.execute(sql.SQL("GRANT {} TO {}").format(sql.Identifier(inherit_name), sql.Identifier(name)),
-                        commit=True, close=False)
+        self.inherit_role(name,inherit_name)
 
+        schema = self.raw_data
         # Grant schema usage
         self.db.execute(sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
-            sql.Identifier(self.raw_data),
+            sql.Identifier(schema),
             sql.Identifier(name)
         ), commit=True, close=False)
         # Grant table-level select
         grant_current_perm_query = sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA {} to {}").format(
-            sql.Identifier(self.raw_data),
+            sql.Identifier(schema),
             sql.Identifier(name)
         )
         self.db.execute(grant_current_perm_query, commit=True, close=False)
         # Grant access to future tables
         grant_future_perm_query = sql.SQL(
             "ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT SELECT ON TABLES TO {}").format(
-            sql.Identifier(self.raw_data),
+            sql.Identifier(schema),
             sql.Identifier(name)
         )
         self.db.execute(grant_future_perm_query, commit=True, close=False)
+
         if close:
             self.db.close()
 
@@ -170,6 +181,8 @@ class RoleManager:
         # Grant table-level access
         self.db.execute(sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA public to {}").format(sql.Identifier(name)),
                         commit=True, close=close)
+
+
         if close:
             self.db.close()
 
@@ -190,3 +203,33 @@ class RoleManager:
             password=sql.Literal(password)
         )
         self.db.execute(create_role_query, commit=True)
+
+    def inherit_role(self,name, inherit_name):
+        self.db.execute(sql.SQL("GRANT {} TO {}").format(sql.Identifier(inherit_name), sql.Identifier(name)),
+                        commit=True, close=False)
+
+    def create_user_from_role(self,name,password,inherit_name):
+        self.create_role(name,password)
+        self.inherit_role(name,inherit_name)
+
+
+    def grant_usage_select_sequence_access(self,name,schema,future:bool=False):
+        """This method grants access to sequences.
+        The optional argument future decides whether this access should be for future as well"""
+        # Give access to existing sequences
+        self.db.execute(
+            sql.SQL("GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA {} TO {}").format(
+                sql.Identifier(schema),
+                sql.Identifier(name)
+            ),
+            commit=True, close=False
+        )
+        if future:
+            # Give access to future sequences
+            self.db.execute(
+                sql.SQL("ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT USAGE, SELECT ON SEQUENCES TO {}").format(
+                    sql.Identifier(schema),
+                    sql.Identifier(name)
+                ),
+                commit=True, close=False
+            )
