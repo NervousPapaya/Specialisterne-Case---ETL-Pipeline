@@ -1,10 +1,14 @@
-# ETL Intro
+# ETL Intro (with security layer)
 
 This program's purpose is to extract, transform and load data from external APIs to an internal database.
+It has rudimentary security functionality with defined roles in the database structure as well as a basic logging system.
 
 ## Table of Contents
 1. [Description](#description)
 2. [Database Structure](#database-structure)
+   - [Schema](#schema)
+   - [Data Tables](#data-tables)
+   - [Security Roles](#security-roles)
 3. [Getting Started](#getting-started)
    - [Requirements](#requirements)
    - [Dependencies](#dependencies)
@@ -18,16 +22,16 @@ This program's purpose is to extract, transform and load data from external APIs
 6. [Version History](#version-history)
 
 ## Description
-The program's main functionalities are:
-* Extract weather data from the APIs at DMI and Specialisterne ApS.
-* Transform it into generally uniform data structures (millicelsius to celsius etc.) 
-* Load it into a custom-built SQL database with a user-defined name.
+The program's main functionalities is an ETL process which:
+* Extracts weather data from the APIs at DMI and Specialisterne ApS.
+* Transforms it into generally uniform data structures (millicelsius to celsius etc.) 
+* Loads it into a custom-built SQL database with a user-defined name.
 
 As is, the program pulls data from 3 measuring stations at DMI: Jæbersborg, Ødum and Årslev.
 When run, the program pulls data from the APIs in this order:
-1. The 'old' Specialisterne API (purely an archive - no new readings are made)
+1. The 'old' Specialisterne API (purely an archive - no new readings are made. Update: The API is currently inactive.)
 2. DMI
-3. The New specialisterne API
+3. The New Specialisterne API (Update: The API is currently inactive.)
 
 The program can run in docker, or it can create and write to a local PostgreSQL database. 
 Furthermore, the program has two modes: pull data once or at set time intervals while running. 
@@ -36,11 +40,26 @@ By design, the program is OS-agnostic but has only been tested on Windows.
 During the extraction process, the program will create/write to a JSON file ("etl_times.json") which holds the latest timestamps of each data source.
 The program will then use these as a start point for pulls the next time it runs.
 
-The work here was a 2-week project during my course at Specialisterne ApS. 
+In addition to the ETL process' main functionalities, it has a rudimentary logging system. The database also has various roles set up which are "ready-to-use" and allow for access control.
+
+The ETL process was a 2-week project while the security layer and log system was a 1-week addition.
+Both parts were done during my course at Specialisterne ApS. 
 
 
 ### Database structure
-After initializing, the database will have 4 ordinary tables "DMI", "BME280", "DS18B20" and "SCD41" which store data from each respective source. Furthermore, 3 view tables will be created containing all the databases' temperature, humidity and pressure data respectively. 
+
+
+#### Schema
+After initializing, the database will have 3 schema: 
+
+| Schema | Purpose                                        |
+|--------|------------------------------------------------|
+| Logs   | Stores logs                                    |
+| Public | Default Schema; stores the view tables         |
+| Raw    | For storing raw data pulled from external APIs |
+
+#### Data Tables 
+The database initializer creates a schema "Raw" containing 3 ordinary tables "DMI", "BME280", "DS18B20" and "SCD41" which store data from each respective source. Furthermore, 3 view tables will be created in "Public" containing all the databases' temperature, humidity and pressure data respectively. 
 The structure of these tables can be found in SQL files in /app/sql.
 
 The datatypes of the table columns are defined in load/schemas/table_schema.py. Here is an overview of the tables, with columns and datatypes:
@@ -94,6 +113,18 @@ The datatypes of the table columns are defined in load/schemas/table_schema.py. 
 | observed_at | timestamp with time zone | the date when the data was observed                |
 | pulled_at   | timestamp with time zone | the date at which the data was pulled from the API |
 
+#### Security Roles
+The database initializer sets up various roles. Along with the default admin, they allow the program user to set various levels of access. At present, only the logger, data engineer and admin are used.
+The database roles are handled by the RoleManager class in app/load/db/roles.py. 
+
+| Role      | Permissions                                                                                   |
+|-----------|-----------------------------------------------------------------------------------------------|
+| Analyst   | Select on all current and future tables in "Public"                                           |
+| Auditor   | Select on business and tech logs                                                              |
+| Engineer  | Select, Insert and Update on all current and future tables in "Raw"                           |
+| Inspector | Select on all current and future tables in "Raw". Also inherits Analyst, i.e. "Public" access.|
+| Logger    | Insert on all current tables in "Logs"                                                        |
+| Viewer    | Select on all current tables in "Public". Intended for public use.                            |
 
 
 ## Getting Started
@@ -244,5 +275,6 @@ NB: Note that as with the cleanse_db method, this does not clear the internal id
 @NervousPapaya
 
 ## Version History
-
+* 1.2 The current version. Added security administration to the database in the form of roles and rudimentary logging in the database.
+* 1.1 Added error handling in-case the various APIs called cannot be connected to. 
 * 1.0 First fully functioning version with README

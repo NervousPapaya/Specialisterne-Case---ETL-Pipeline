@@ -54,7 +54,8 @@ class RoleManager:
         # Grant table-level select
         self.db.execute(sql.SQL("GRANT SELECT ON {}.tech_log TO {}").format(sql.Identifier(logs),sql.Identifier(name)), commit=True,
                         close=False)
-
+        self.db.execute(sql.SQL("GRANT SELECT ON {}.business_log TO {}").format(sql.Identifier(logs),sql.Identifier(name)), commit=True,
+                        close=False)
 
         if close:
             self.db.close()
@@ -103,6 +104,39 @@ class RoleManager:
         if close:
             self.db.close()
 
+
+    def setup_inspector(self, close=False):
+        name = os.getenv("DATA_INSPECTOR_USER")
+        password = os.getenv("DATA_INSPECTOR_PASSWORD")
+        inherit_name = os.getenv("data_analyst_user")
+        self.create_role(name, password)
+        # Inherit the data analyst role
+        self.inherit_role(name,inherit_name)
+
+        schema = self.raw_data
+        # Grant schema usage
+        self.db.execute(sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
+            sql.Identifier(schema),
+            sql.Identifier(name)
+        ), commit=True, close=False)
+        # Grant table-level select
+        grant_current_perm_query = sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA {} to {}").format(
+            sql.Identifier(schema),
+            sql.Identifier(name)
+        )
+        self.db.execute(grant_current_perm_query, commit=True, close=False)
+        # Grant access to future tables
+        grant_future_perm_query = sql.SQL(
+            "ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT SELECT ON TABLES TO {}").format(
+            sql.Identifier(schema),
+            sql.Identifier(name)
+        )
+        self.db.execute(grant_future_perm_query, commit=True, close=False)
+
+        if close:
+            self.db.close()
+
+
     def setup_logger(self):
         name = os.getenv("LOGGER_USER")
         password = os.getenv("LOGGER_PASSWORD")
@@ -140,36 +174,7 @@ class RoleManager:
             commit=True, close=False
         )
 
-    def setup_inspector(self, close=False):
-        name = os.getenv("DATA_INSPECTOR_USER")
-        password = os.getenv("DATA_INSPECTOR_PASSWORD")
-        inherit_name = os.getenv("data_analyst_user")
-        self.create_role(name, password)
-        # Inherit the data analyst role
-        self.inherit_role(name,inherit_name)
 
-        schema = self.raw_data
-        # Grant schema usage
-        self.db.execute(sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
-            sql.Identifier(schema),
-            sql.Identifier(name)
-        ), commit=True, close=False)
-        # Grant table-level select
-        grant_current_perm_query = sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA {} to {}").format(
-            sql.Identifier(schema),
-            sql.Identifier(name)
-        )
-        self.db.execute(grant_current_perm_query, commit=True, close=False)
-        # Grant access to future tables
-        grant_future_perm_query = sql.SQL(
-            "ALTER DEFAULT PRIVILEGES IN SCHEMA {} GRANT SELECT ON TABLES TO {}").format(
-            sql.Identifier(schema),
-            sql.Identifier(name)
-        )
-        self.db.execute(grant_future_perm_query, commit=True, close=False)
-
-        if close:
-            self.db.close()
 
     def setup_viewer(self, close=False):
         name = os.getenv("VIEWER_USER")
