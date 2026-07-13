@@ -3,16 +3,23 @@ from app.extract.new_specialisterne import NewSpecAPI
 from app.extract.dmi import DMIAPI
 from app.transform.transform import SpecDataTransformer, DMIDataTransformer
 from app.load.db.CRUD import CRUD
+from app.load.db.logger import DBLogger
+from app.config import database_schemas
+import os
 import json
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
 import threading
-
+import requests
 
 class ETLProcess:
     def __init__(self, docker: bool = False):
-        self.crud = CRUD(docker)
+        self.user = os.getenv("DATA_ENGINEER_USER")
+        self.password = os.getenv("DATA_ENGINEER_PASSWORD")
+        self.crud = CRUD(user=self.user,password=self.password,docker=docker)
+        self.logger = DBLogger(database=self.crud.get_database(),host=self.crud.get_host())
+        self.data_schema = database_schemas.get("raw_data_schema")
 
 
     def docker_etl_background(self, interval_minutes: int = 10):
@@ -32,6 +39,8 @@ class ETLProcess:
     def update_database(self):
         """This method handles all the various ETLs"""
         times_dict = self.get_start_times()
+        start_time=time.time()
+        self.logger.log_business_event(self.user, "parent_etl_start", f"Parent ETL started",{"target":"data warehouse"},close=False)
 
         # This handles the old specialisterne etl
         self.spec_etl(from_time=times_dict["spec"])
@@ -58,19 +67,31 @@ class ETLProcess:
         times_dict = self.get_start_times()
         self.new_spec_etl(from_time=times_dict["spec"])
 
+        self.logger.log_business_event(self.user, "parent_etl_finished", f"Parent ETL finished",{"run_time":time.time()-start_time},close=False)
+
+
 
     def dmi_etl(self, station_id, parameter_id, from_time: str = "2026-03-09T00:00:00Z", max_pulls: int = None,
                 limit: int = 5000):
         api = DMIAPI()
         start_time = time.time()
+        total_rows_inserted = 0
         total_pulls = 0
         offset = 0
         transformer = DMIDataTransformer()
 
+        self.logger.log_business_event(self.user, "etl_start", f"ETL started for station {station_id}, parameter {parameter_id}",{"source":"DMI","target":"data warehouse"},close=False)
+
         print(f"Pulling {parameter_id} data with stationid {station_id} from the DMI API")
         while True:
-            pull_time, records = api.pull_datetime(station_id=station_id, parameter_id=parameter_id, limit=limit,
+            try:
+                pull_time, records = api.pull_datetime(station_id=station_id, parameter_id=parameter_id, limit=limit,
                                                    start_time=from_time, offset=offset)
+            except requests.exceptions.SSLError as e:
+                self.logger.log_business_event(self.user, "etl_error", f"SSL error while pulling data: {e}",close=False)
+                print(f"SSL error while pulling data: {e}")
+                break
+
             if not records:
                 print("No more new records.")
                 break
@@ -81,30 +102,39 @@ class ETLProcess:
             from_time = self.advance_timestamp(max(r["properties"]["observed"] for r in records))
 
             db_dict = transformer.dmi_data_to_db_dict(pull_time, records)
-            self.crud.create_mult_rows("DMI", db_dict, commit=True, close=False)
+            rows_inserted = self.crud.create_mult_rows("DMI", db_dict, schema_name=self.data_schema, commit=True, close=False)
 
             elapsed_time = time.time() - start_time
             print(f"{limit} records pulled. Exporting pull times to json. Elapsed time: {elapsed_time}")
-
             self.export_start_times(from_time, "DMI", parameter_id)
-
             elapsed_time = time.time() - start_time
             print(f"json exported. Pulling next {limit}. Elapsed time: {elapsed_time}")
+
+            total_rows_inserted += rows_inserted
             total_pulls += 1
             if self.check_max_vs_total_pulls(max_pulls,total_pulls,start_time):
                 break
+        self.logger.log_business_event(self.user, "etl_finish",  f"ETL finished for station {station_id}, parameter {parameter_id}",    {"total_pulls": total_pulls, "rows_inserted":total_rows_inserted, "elapsed_time_sec": time.time() - start_time},close=False)
+
         self.crud.db.close()
 
     def spec_etl(self, from_time: str = "2026-03-09T00:00:00Z", max_pulls: int = None, limit: int = 5000):
         api = SpecAPI()
         start_time = time.time()
+        total_rows_inserted = 0
+
         total_pulls = 0
         avoid_ids = set()
         transformer = SpecDataTransformer()
-
-        print("Pulling data from the Specialisterne API")
+        self.logger.log_business_event(self.user, "etl_start",  f"ETL started", {"source":"Old Specialisterne API","target":"data warehouse"},close=False)
+        print("Pulling data from the old Specialisterne API")
         while True:
-            pull_time, records = api.pull_from(limit=limit, from_time=from_time)
+            try:
+                pull_time, records = api.pull_from(limit=limit, from_time=from_time)
+            except requests.exceptions.SSLError as e:
+                self.logger.log_business_event(self.user, "etl_error", f"SSL error while pulling data: {e}",close=False)
+                print(f"SSL error while pulling data: {e}")
+                break
 
             if avoid_ids:
                 records = self.remove_rows_by_id(records, avoid_ids)
@@ -126,8 +156,9 @@ class ETLProcess:
             avoid_ids = {last_bme["id"], last_ds["id"]}
 
             db_dict = transformer.spec_data_to_db_dict(pull_time, records)
+            rows_inserted = 0
             for table_name in db_dict:
-                self.crud.create_mult_rows(table_name, db_dict[table_name], commit=True, close=False)
+                rows_inserted += self.crud.create_mult_rows(table_name, db_dict[table_name], schema_name=self.data_schema, commit=True, close=False)
 
             elapsed_time = time.time() - start_time
             print(f"5000 records pulled. Exporting pull times to json. Elapsed time: {elapsed_time}")
@@ -136,9 +167,11 @@ class ETLProcess:
 
             elapsed_time = time.time() - start_time
             print(f"json exported. Pulling next 5000. Elapsed time: {elapsed_time}")
+            total_rows_inserted += rows_inserted
             total_pulls += 1
             if self.check_max_vs_total_pulls(max_pulls,total_pulls,start_time):
                 break
+        self.logger.log_business_event(self.user, "etl_finish",  f"ETL finished",    {"total_pulls": total_pulls,"rows_inserted":total_rows_inserted, "elapsed_time_sec": time.time() - start_time},close=False)
         self.crud.db.close()
 
     def advance_timestamp(self, ts):
@@ -260,13 +293,20 @@ class ETLProcess:
     def new_spec_etl(self, from_time: str = "2026-03-17T00:00:00Z", max_pulls: int = None, limit: int = 5000):
         api = NewSpecAPI()
         start_time = time.time()
+        total_rows_inserted = 0
         total_pulls = 0
         avoid_ids = set()
         transformer = SpecDataTransformer()
 
+        self.logger.log_business_event(self.user, "etl_start",  f"ETL started", {"source":"New Specialisterne API","target":"data warehouse"},close=False)
         print("Pulling data from the New Specialisterne API")
         while True:
-            pull_time, records = api.pull_from(limit=limit, from_time=from_time)
+            try:
+                pull_time, records = api.pull_from(limit=limit, from_time=from_time)
+            except requests.exceptions.SSLError as e:
+                self.logger.log_business_event(self.user, "etl_error", f"SSL error while pulling data: {e}",close=False)
+                print(f"SSL error while pulling data: {e}")
+                break
 
             if avoid_ids:
                 records = self.remove_rows_by_id(records, avoid_ids)
@@ -288,8 +328,9 @@ class ETLProcess:
             avoid_ids = [last_readings[key]["id"] for key in last_readings]
 
             db_dict = transformer.new_spec_data_to_db_dict(pull_time, records)
+            rows_inserted = 0
             for table_name in db_dict:
-                self.crud.create_mult_rows(table_name, db_dict[table_name], commit=True, close=False)
+                rows_inserted += self.crud.create_mult_rows(table_name, db_dict[table_name], schema_name=self.data_schema, commit=True, close=False)
 
             elapsed_time = time.time() - start_time
             print(f"5000 records pulled. Exporting pull times to json. Elapsed time: {elapsed_time}")
@@ -298,9 +339,12 @@ class ETLProcess:
 
             elapsed_time = time.time() - start_time
             print(f"json exported. Pulling next 5000. Elapsed time: {elapsed_time}")
+            total_rows_inserted += rows_inserted
             total_pulls += 1
             if self.check_max_vs_total_pulls(max_pulls,total_pulls,start_time):
                 break
+        self.logger.log_business_event(self.user, "etl_finish",  f"ETL finished",    {"total_pulls": total_pulls,"rows_inserted":total_rows_inserted, "elapsed_time_sec": time.time() - start_time},close=False)
+
         self.crud.db.close()
 
     def get_last_readings(self, records):

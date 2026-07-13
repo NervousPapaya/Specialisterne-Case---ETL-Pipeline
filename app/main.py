@@ -6,7 +6,8 @@ from app.load.db.CRUD import CRUD
 
 def main():
     initializer = DatabaseInitializer(docker=docker)
-    initializer.create_db()
+    if not docker:
+        initializer.create_db()
     initializer.initialize_db()
 
     # crud = CRUD()

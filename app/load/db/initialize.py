@@ -1,12 +1,12 @@
 # This module is for initializing the database
 from app.load.db.connection import Connector
 from app.load.schemas.table_schema import TABLES
-from app.config import local_database_schema,docker_database_schema
+from app.config import local_database_schema,docker_database_schema,database_schemas
 from psycopg2 import sql
 import psycopg2
 from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT
-import os
-from pathlib import Path
+from app.load.db.table_creator import TableCreator
+from app.load.db.roles import RoleManager
 
 class DatabaseInitializer:
     """This class handles the initial set up of the database.
@@ -23,54 +23,30 @@ class DatabaseInitializer:
             self.db_name = local_database_schema["database"]
             self.db = Connector(local_database_schema["database"], local_database_schema["user"],
                                 local_database_schema["password"], local_database_schema["host"])
+        self.schemas=database_schemas
+        self.RoleManager = RoleManager(db=self.db)
+        self.TableCreator = TableCreator(db=self.db)
 
-    #This should maybe be in a separate class? So that we can open the connection once, and create all the tables
-    def set_up_table(self,table_name: str, columns:dict, close:bool=True):
-        """This method is designed to set up a table.
-        table_name is a string being the name of the table
-        columns is a dict with keys being column names and values being the data types"""
 
-        column_defs = [
-            sql.SQL("{} {} NOT NULL").format(
-                sql.Identifier(col_name),
-                sql.SQL(col_type)
-            )
-            for col_name, col_type in columns.items()
-        ]
-
-        query = sql.SQL("""
-        CREATE TABLE IF NOT EXISTS {} (
-        {} SERIAL PRIMARY KEY,
-        {}
-        );""").format(
-        sql.Identifier(table_name),
-            sql.Identifier(f"{table_name}_id"),
-            sql.SQL(",\n").join(column_defs)
-        )
-
-        self.db.execute(query, close=close, commit=True)
-
-    def set_up_view_tables(self,close: bool=True):
-        base_path = Path(__file__).resolve().parent
-        sql_folder = (base_path / ".." / ".." / "sql" / "tables").resolve()
-        for filename in os.listdir(sql_folder):
-            if filename.endswith(".sql"):
-                filepath = os.path.join(sql_folder, filename)
-                self.db.execute_sql_file(filepath,close=close,commit=True)
-
+    def set_up_schemas(self,close=True):
+        for schema in self.schemas:
+            schema_name=self.schemas.get(schema)
+            schema_query = sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(sql.Identifier(schema_name))
+            self.db.execute(schema_query, close=close,commit=True)
 
     def initialize_db(self):
         self.db.connect()
+        self.set_up_schemas(close=False)
         for table in TABLES:
             print(f"Setting up table: {table}")
-            self.set_up_table(table,TABLES[table],False)
-        self.set_up_view_tables(False)
+            self.TableCreator.set_up_table(table,TABLES[table]["columns"], TABLES[table]["schema"],close=False)
+        self.TableCreator.set_up_view_tables(close=False)
+        self.RoleManager.setup_roles()
 
         self.db.close()
 
-    # The following method only runs when working with an external database.
     def create_db(self):
-        """This method creates the initial database"""
+        """This method creates the initial database if none exists"""
         # Connect to server (without specifying a database yet)
         conn = psycopg2.connect(
             dbname="postgres",
@@ -95,3 +71,4 @@ class DatabaseInitializer:
 
         cursor.close()
         conn.close()
+

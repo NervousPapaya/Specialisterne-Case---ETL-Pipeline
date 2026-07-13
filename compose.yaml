@@ -1,3 +1,4 @@
+name: ETL
 services:
   app:
     build: .
