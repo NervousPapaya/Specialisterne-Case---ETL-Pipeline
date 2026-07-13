@@ -22,7 +22,7 @@ It has rudimentary security functionality with defined roles in the database str
 6. [Version History](#version-history)
 
 ## Description
-The program's main functionalities is an ETL process which:
+The program's main functionality is an ETL process which:
 * Extracts weather data from the APIs at DMI and Specialisterne ApS.
 * Transforms it into generally uniform data structures (millicelsius to celsius etc.) 
 * Loads it into a custom-built SQL database with a user-defined name.
